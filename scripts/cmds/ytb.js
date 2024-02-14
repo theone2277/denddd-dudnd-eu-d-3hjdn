@@ -314,58 +314,71 @@ async function search(keyWord) {
 }
 
 async function getVideoInfo(id) {
-	// get id from url if url
-	id = id.replace(/(>|<)/gi, '').split(/(vi\/|v=|\/v\/|youtu\.be\/|\/embed\/)/);
-	id = id[2] !== undefined ? id[2].split(/[^0-9a-z_\-]/i)[0] : id[0];
+		// Get id from the URL if it's a URL
+		id = id.replace(/(>|<)/gi, '').split(/(vi\/|v=|\/v\/|youtu\.be\/|\/embed\/)/);
+		id = id[2] !== undefined ? id[2].split(/[^0-9a-z_\-]/i)[0] : id[0];
 
-	const { data: html } = await axios.get(`https://youtu.be/${id}?hl=en`, {
-		headers: {
-			'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36'
+		try {
+				const { data: html } = await axios.get(`https://youtu.be/${id}?hl=en`, {
+						headers: {
+								'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/87.0.4280.101 Safari/537.36'
+						}
+				});
+
+				const json = JSON.parse(html.match(/var ytInitialPlayerResponse = (.*?});/)[1]);
+				const json2 = JSON.parse(html.match(/var ytInitialData = (.*?});/)[1]);
+
+				const { title, lengthSeconds, viewCount, videoId, thumbnail, author } = json.videoDetails;
+
+				let getChapters = [];
+				try {
+						getChapters = json2.playerOverlays.playerOverlayRenderer.decoratedPlayerBarRenderer.decoratedPlayerBarRenderer.playerBar.multiMarkersPlayerBarRenderer.markersMap.find(x => x.key == "DESCRIPTION_CHAPTERS" && x.value.chapters).value.chapters;
+				} catch (e) {
+						getChapters = [];
+				}
+
+				const owner = json2.contents.twoColumnWatchNextResults.results.results.contents.find(x => x.videoSecondaryInfoRenderer).videoSecondaryInfoRenderer.owner;
+
+				const likesInfo = json2.contents.twoColumnWatchNextResults.results.results.contents.find(x => x.videoPrimaryInfoRenderer);
+				const likes = likesInfo?.videoPrimaryInfoRenderer?.videoActions?.menuRenderer?.topLevelButtons?.find(x => x.segmentedLikeDislikeButtonRenderer)?.segmentedLikeDislikeButtonRenderer?.likeButton?.toggleButtonRenderer?.defaultText?.accessibility?.accessibilityData?.label?.replace(/\.|,/g, '')?.match(/\d+/)?.[0] || '0';
+				const likesCount = parseInt(likes, 10);
+
+				const result = {
+						videoId,
+						title,
+						video_url: `https://youtu.be/${videoId}`,
+						lengthSeconds: lengthSeconds.match(/\d+/)[0],
+						viewCount: viewCount.match(/\d+/)[0],
+						uploadDate: json.microformat.playerMicroformatRenderer.uploadDate,
+						likes: likesCount,
+						chapters: getChapters.map((x, i) => {
+								const start_time = x.chapterRenderer.timeRangeStartMillis;
+								const end_time = getChapters[i + 1]?.chapterRenderer?.timeRangeStartMillis || lengthSeconds.match(/\d+/)[0] * 1000;
+
+								return {
+										title: x.chapterRenderer.title.simpleText,
+										start_time_ms: start_time,
+										start_time: start_time / 1000,
+										end_time_ms: end_time - start_time + start_time,
+										end_time: (end_time - start_time + start_time) / 1000
+								};
+						}),
+						thumbnails: thumbnail.thumbnails,
+						author: author,
+						channel: {
+								id: owner.videoOwnerRenderer.navigationEndpoint.browseEndpoint.browseId,
+								username: owner.videoOwnerRenderer.navigationEndpoint.browseEndpoint.canonicalBaseUrl,
+								name: owner.videoOwnerRenderer.title.runs[0].text,
+								thumbnails: owner.videoOwnerRenderer.thumbnail.thumbnails,
+								subscriberCount: parseAbbreviatedNumber(owner.videoOwnerRenderer.subscriberCountText.simpleText)
+						}
+				};
+
+				return result;
+		} catch (error) {
+				console.error('Error retrieving video information:', error);
+				throw error;
 		}
-	});
-	const json = JSON.parse(html.match(/var ytInitialPlayerResponse = (.*?});/)[1]);
-	const json2 = JSON.parse(html.match(/var ytInitialData = (.*?});/)[1]);
-	const { title, lengthSeconds, viewCount, videoId, thumbnail, author } = json.videoDetails;
-	let getChapters;
-	try {
-		getChapters = json2.playerOverlays.playerOverlayRenderer.decoratedPlayerBarRenderer.decoratedPlayerBarRenderer.playerBar.multiMarkersPlayerBarRenderer.markersMap.find(x => x.key == "DESCRIPTION_CHAPTERS" && x.value.chapters).value.chapters;
-	}
-	catch (e) {
-		getChapters = [];
-	}
-	const owner = json2.contents.twoColumnWatchNextResults.results.results.contents.find(x => x.videoSecondaryInfoRenderer).videoSecondaryInfoRenderer.owner;
-	const result = {
-		videoId,
-		title,
-		video_url: `https://youtu.be/${videoId}`,
-		lengthSeconds: lengthSeconds.match(/\d+/)[0],
-		viewCount: viewCount.match(/\d+/)[0],
-		uploadDate: json.microformat.playerMicroformatRenderer.uploadDate,
-		likes: json2.contents.twoColumnWatchNextResults.results.results.contents.find(x => x.videoPrimaryInfoRenderer).videoPrimaryInfoRenderer.videoActions.menuRenderer.topLevelButtons.find(x => x.segmentedLikeDislikeButtonRenderer).segmentedLikeDislikeButtonRenderer.likeButton.toggleButtonRenderer.defaultText.accessibility?.accessibilityData.label.replace(/\.|,/g, '').match(/\d+/)?.[0] || 0,
-		chapters: getChapters.map((x, i) => {
-			const start_time = x.chapterRenderer.timeRangeStartMillis;
-			const end_time = getChapters[i + 1]?.chapterRenderer?.timeRangeStartMillis || lengthSeconds.match(/\d+/)[0] * 1000;
-
-			return {
-				title: x.chapterRenderer.title.simpleText,
-				start_time_ms: start_time,
-				start_time: start_time / 1000,
-				end_time_ms: end_time - start_time + start_time,
-				end_time: (end_time - start_time + start_time) / 1000
-			};
-		}),
-		thumbnails: thumbnail.thumbnails,
-		author: author,
-		channel: {
-			id: owner.videoOwnerRenderer.navigationEndpoint.browseEndpoint.browseId,
-			username: owner.videoOwnerRenderer.navigationEndpoint.browseEndpoint.canonicalBaseUrl,
-			name: owner.videoOwnerRenderer.title.runs[0].text,
-			thumbnails: owner.videoOwnerRenderer.thumbnail.thumbnails,
-			subscriberCount: parseAbbreviatedNumber(owner.videoOwnerRenderer.subscriberCountText.simpleText)
-		}
-	};
-
-	return result;
 }
 
 function parseAbbreviatedNumber(string) {

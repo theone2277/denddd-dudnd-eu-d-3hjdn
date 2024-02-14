@@ -1,78 +1,66 @@
-const axios = require("axios");
+async function onStart({ message, args, getLang }) {
+   
+  let [samir, richi] = args.join('').match(/([\uD800-\uDBFF][\uDC00-\uDFFF])/g) || [];
+  samir = samir ?? '';
+  richi = richi ?? '';
 
-module.exports = {
-	config: {
-		name: "emojimix",
-		version: "1.3",
-		author: "NTKhang",
-		countDown: 5,
-		role: 0,
-		shortDescription: "Mix 2 emoji",
-		longDescription: {
-			vi: "Mix 2 emoji lại với nhau",
-			en: "Mix 2 emoji together"
-		},
-		guide: {
-			vi: "   {pn} <emoji1> <emoji2>"
-				+ "\n   Ví dụ:  {pn} 🤣 🥰",
-			en: "   {pn} <emoji1> <emoji2>"
-				+ "\n   Example:  {pn} 🤣 🥰"
-		},
-		category: "fun"
-	},
 
-	langs: {
-		vi: {
-			error: "Rất tiếc, emoji %1 và %2 không mix được",
-			success: "Emoji %1 và %2 mix được %3 ảnh"
-		},
-		en: {
-			error: "Sorry, emoji %1 and %2 can't mix",
-			success: "Emoji %1 and %2 mix %3 images"
-		}
-	},
 
-	onStart: async function ({ message, args, getLang }) {
-		const readStream = [];
-		const emoji1 = args[0];
-		const emoji2 = args[1];
 
-		if (!emoji1 || !emoji2)
-			return message.SyntaxError();
 
-		const generate1 = await generateEmojimix(emoji1, emoji2);
-		const generate2 = await generateEmojimix(emoji2, emoji1);
+  if (!samir || !richi) {
+    return message.SyntaxError();
+  }
 
-		if (generate1)
-			readStream.push(generate1);
-		if (generate2)
-			readStream.push(generate2);
+  try {
+    const samirEmoji = encodeURIComponent(samir);
+    const richiEmoji = encodeURIComponent(richi);
+    const url = `https://emojimix.team-vortex-io.repl.co/emojimix?emoji1=${samirEmoji}&emoji2=${richiEmoji}&apikey=I_loveU_richi`;
 
-		if (readStream.length == 0)
-			return message.reply(getLang("error", emoji1, emoji2));
+    const emojimix = await global.utils.getStreamFromUrl(url);
 
-		message.reply({
-			body: getLang("success", emoji1, emoji2, readStream.length),
-			attachment: readStream
-		});
-	}
+    if (!emojimix) {
+      return message.reply(getLang("error", samir, richi, "Couldn't mix emojis"));
+    }
+
+    const image = [emojimix];
+
+    message.reply({
+      body: getLang("success", samir, richi, image.length),
+      attachment: image
+    });
+  } catch (err) {
+    console.log(err);
+  }
+}
+
+const config = {
+  name: "em",
+  aliases: ["emojimix"],
+  version: "1.3",
+  author: "Samir Œ",
+  countDown: 5,
+  role: 0,
+  shortDescription: "Mix 2 emoji",
+  longDescription: {
+    en: "Mix 2 emoji together"
+  },
+  guide: {
+    en: "   {pn} <emoji1> <emoji2>"
+      + "\n   Example:  {pn} 🤣 🥰"
+  },
+  category: "fun"
 };
 
+const langs = {
+  en: {
+    error: "Sorry, emoji %1 and %2 can't be mixed: %3",
+    success: "Emoji %1 and %2 mix %3 images"
+  }
+};
 
-
-async function generateEmojimix(emoji1, emoji2) {
-	try {
-		const { data: response } = await axios.get("https://goatbotserver.onrender.com/taoanhdep/emojimix", {
-			params: {
-				emoji1,
-				emoji2
-			},
-			responseType: "stream"
-		});
-		response.path = `emojimix${Date.now()}.png`;
-		return response;
-	}
-	catch (e) {
-		return null;
-	}
-}
+module.exports = {
+  config,
+  langs,
+  onStart
+};
